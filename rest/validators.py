@@ -1,7 +1,5 @@
 import re
 
-from flask import g
-
 
 def required(value):
   if value is None:
@@ -36,8 +34,5 @@ def multiple_choice(choices):
   return assert_choice_in_choices
 
 def non_falsy_list(value):
-  non_empty = nonempty(value)
-  if non_empty: return non_empty
-
-  for e in value:
-    if not e: return ['list must contain values']
+  if not [v for v in value if v] == value:
+    return ['list must contain values']
