@@ -19,6 +19,7 @@ from fields import NoneString
 from fields import ReadOnly
 from fields import String
 from fields import StringBool
+from fields import TruthyOnlyList
 from fields import URL
 from fields import WriteOnce
 from fields import WriteOnly
