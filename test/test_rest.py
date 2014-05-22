@@ -3,6 +3,7 @@ from StringIO import StringIO
 
 from flask import Flask
 from flask.ext.testing import TestCase
+from json import dumps
 from json import loads
 from nose.plugins.skip import SkipTest
 
@@ -74,6 +75,28 @@ class TestCSVUpload(TestCase):
         self.seen_dog_names.append(schema.dog_type.get())
       return rest.created({'csv': 'created'})
 
+    @self.app.route('/csv_with_fieldnames', methods=['POST'])
+    @rest.csv_upload(CSVSchema, fieldnames=('dog_type','food','pounds',))
+    def csv_with_fieldnames(rows):
+      for schema in rows:
+        self.seen_dog_names.append(schema.dog_type.get())
+      return rest.created({'csv': 'created'})
+
+
+    @self.app.route('/csv_json/<id_one>/<id_two>', methods=['POST'])
+    @rest.json_csv_upload(CSVSchema)
+    def csv_json(id_one, id_two, rows, data):
+      for schema in rows:
+        self.seen_dog_names.append(schema.dog_type.get())
+      return rest.created({'csv': 'created'})
+
+    @self.app.route('/csv_json_with_fieldnames', methods=['POST'])
+    @rest.json_csv_upload(CSVSchema, fieldnames=('dog_type','food','pounds',))
+    def csv_json_with_fieldnames(rows, data):
+      for schema in rows:
+        self.seen_dog_names.append(schema.dog_type.get())
+      return rest.created({'csv': 'created'})
+
   def create_app(self):
     self.app = Flask('TestCSVUpload')
     return self.app
@@ -85,6 +108,22 @@ class TestCSVUpload(TestCase):
     resp = self.client.post('/csv', headers=self.csv_headers)
 
     self.assert400(resp)
+
+  def test_csv_upload_without_header(self):
+    """
+    it should 400 if it doesn't know which fields to use for rows
+    """
+    data = "great dane,cured meats,200\n" \
+      "shibe,doge food,20\n" \
+      "'strodog,kibble,65"
+
+    resp = self.client.post('/csv', data={
+      'file': (StringIO(data), 'test.csv')}, headers=self.csv_headers)
+
+    self.assert400(resp)
+    body = loads(resp.data)
+
+    self.assertIn('cannot be empty', body['food'])
 
   def test_csv_upload_with_invalid_data(self):
     """
@@ -153,6 +192,113 @@ class TestCSVUpload(TestCase):
       headers=self.csv_headers)
 
     self.assert_status(resp, 201)
+    self.assertIn(u'Hänsel', self.seen_dog_names)
+    self.assertIn(u'niño', self.seen_dog_names)
+    self.assertIn(u'foxes', self.seen_dog_names)
+
+  def test_csv_upload_with_predefined_fieldnames(self):
+    """
+    it should use the given fieldnames in making dicts for the schema
+    """
+    data = "foxes,cured meats,3200\n" \
+      "H\xc3\xa4nsel,pies,1500\n" \
+      "ni\xc3\xb1o,foods,43\n"
+
+    resp = self.client.post('/csv_with_fieldnames',
+      data={'file': (StringIO(data), 'test.csv')},
+      headers=self.csv_headers)
+
+    self.assert_status(resp, 201)
+    self.assertIn(u'Hänsel', self.seen_dog_names)
+    self.assertIn(u'niño', self.seen_dog_names)
+    self.assertIn(u'foxes', self.seen_dog_names)
+
+  def test_json_csv_upload_with_no_csv_key(self):
+    headers = {
+      'content-type': 'text/json'
+    }
+
+    data = "foxes,cured meats,3200\n" \
+      "H\xc3\xa4nsel,pies,1500\n" \
+      "ni\xc3\xb1o,foods,43\n"
+
+    o = {
+      'this_key_isnt_called_csv': data
+    }
+
+    resp = self.client.post('/csv_json/h/f', data=dumps(o), headers=headers)
+    self.assert400(resp)
+
+    body = loads(resp.data)
+
+    self.assertIn('"csv" key cannot be empty', body['client'])
+
+  def test_json_csv_upload_with_no_header(self):
+    headers = {
+      'content-type': 'text/json'
+    }
+
+    data = "foxes,cured meats,3200\n" \
+      "H\xc3\xa4nsel,pies,1500\n" \
+      "ni\xc3\xb1o,foods,43\n"
+
+    o = {
+      'csv': data
+    }
+
+    resp = self.client.post('/csv_json/h/f', data=dumps(o), headers=headers)
+    self.assert400(resp)
+
+    body = loads(resp.data)
+
+    self.assertIn('cannot be empty', body['food'])
+    self.assertIn('cannot be empty', body['dog_type'])
+
+  def test_json_csv_upload_with_header(self):
+    """
+    it should handle request bodies like {"csv": "name,a,b\nhonk,c,d"}
+    """
+    headers = {
+      'content-type': 'text/json'
+    }
+
+    data = "dog_type,food,pounds\n" \
+      "foxes,cured meats,3200\n" \
+      "H\xc3\xa4nsel,pies,1500\n" \
+      "ni\xc3\xb1o,foods,43\n"
+
+    o = {
+      'csv': data
+    }
+
+    resp = self.client.post('/csv_json/some_id/some_other',
+        data=dumps(o), headers=headers)
+    self.assert_status(resp, 201)
+
+    self.assertIn(u'Hänsel', self.seen_dog_names)
+    self.assertIn(u'niño', self.seen_dog_names)
+    self.assertIn(u'foxes', self.seen_dog_names)
+
+  def test_json_csv_with_defined_fieldnames(self):
+    """
+    it should use the given fieldnames in making dicts for the schema
+    """
+    headers = {
+      'content-type': 'text/json'
+    }
+
+    data = "foxes,cured meats,3200\n" \
+      "H\xc3\xa4nsel,pies,1500\n" \
+      "ni\xc3\xb1o,foods,43\n"
+
+    o = {
+      'csv': data
+    }
+
+    resp = self.client.post('/csv_json_with_fieldnames',
+      data=dumps(o), headers=headers)
+    self.assert_status(resp, 201)
+
     self.assertIn(u'Hänsel', self.seen_dog_names)
     self.assertIn(u'niño', self.seen_dog_names)
     self.assertIn(u'foxes', self.seen_dog_names)

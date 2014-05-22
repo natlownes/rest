@@ -6,6 +6,7 @@ from exceptions import ValueError
 from flask import Response
 from flask import request
 from functools import wraps
+from StringIO import StringIO
 from werkzeug.wrappers import BaseResponse
 
 from schema import Schema
@@ -76,29 +77,57 @@ def view(func):
     return _serialize(func(*args, **kwargs))
   return wrapped
 
-def csv_upload(schema):
+def _check_csv_schema(schema, row, row_number):
+  csv_row_schema = schema(row_number=row_number)
+  if not csv_row_schema(row):
+    raise CsvValidationError('CSV failed validation', csv_row_schema)
+  return csv_row_schema
+
+def csv_upload(schema, fieldnames=None):
   """
   validate each row of a CSV on upload - if a row doesn't pass validation, HTTP
-  400 with a body of the validation errors out of the rest schema
+  400 with a body of the validation errors out of the rest schema.
+  CSV must have a header
 
   the generator object will be passed to the view function as the rows argument
   and will return a rest.Schema for each row.  if nothing calls the generator,
   no validation will occur
   """
-  def check_schema(row, row_number):
-    csv_row_schema = schema(row_number=row_number)
-    if not csv_row_schema(row):
-      raise CsvValidationError('CSV failed validation', csv_row_schema)
-    return csv_row_schema
-
   def decorator(view):
     @wraps(view)
     def view_wrapper(*args, **kwargs):
       body = request.files['file'].stream
-      rows = (check_schema(row, i) \
-          for i, row in enumerate(csv.DictReader(body), start=1))
+      rows = (_check_csv_schema(schema, row, i) \
+          for i, row in enumerate(csv.DictReader(body, fieldnames=fieldnames),
+            start=1))
       try:
         return view(rows, *args, **kwargs)
+      except CsvValidationError as exc:
+        return error(exc.schema)
+
+    return view_wrapper
+  return decorator
+
+def json_csv_upload(schema, fieldnames=None):
+  """
+  similar to `csv_upload`, but handle bodies like {"csv": "name,a,b\nhonk,c,d"}
+  """
+  def decorator(wrapped):
+    @wraps(wrapped)
+    @view
+    def view_wrapper(*args, **kwargs):
+      body = kwargs.get('data')
+      if not body or not body.get('csv'):
+        return error({'client': ['"csv" key cannot be empty']})
+
+      csv_data = body.get('csv').encode('utf8')
+
+      rows = (_check_csv_schema(schema, row, i) \
+          for i, row in enumerate(csv.DictReader(StringIO(csv_data),
+            fieldnames=fieldnames), start=1))
+      kwargs['rows'] = rows
+      try:
+        return wrapped(*args, **kwargs)
       except CsvValidationError as exc:
         return error(exc.schema)
 
