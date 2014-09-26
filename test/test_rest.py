@@ -260,7 +260,7 @@ class TestCSVUpload(TestCase):
       'csv': unicode(data)
     }
 
-    fieldnames = ('name','feed','pounds',)
+    fieldnames = ('name', 'feed', 'pounds',)
     @rest.json_csv_upload(fieldnames)
     def test_using_defined_column_names(rows, data):
       seen_keys = set()
@@ -296,28 +296,26 @@ class TestCSVUpload(TestCase):
 
     test_using_defined_column_names(data=o)
 
-  def test_json_csv_with_differing_fieldnames_and_row_lengths(self):
+  def test_json_csv_with_missing_row_data(self):
     """
-    it should yield an errors list from the returned generator with a message
-    about the row length if too many or too few columns in data
+    when a row is missing data for a given column, that key should be empty str
     """
     data = '''foxes,cured meats,3200\n''' \
       '''H\xc3\xa4nsel,pies,1500,5\n''' \
       '''ni\xc3\xb1o,foods,43\n''' \
-      '''"quotes, mc",,33\n''' \
+      '''"emptyfood",,33,'extra,extra,oh-still-extra'\n''' \
       '''"quotes, mc",rt,33,honk,"honk"'''
 
     o = {
       'csv': data
     }
 
-    @rest.json_csv_upload(('dog_name','food','pounds',))
-    def test_yielded_errors(rows, data):
-      collected_errors = []
+    @rest.json_csv_upload(('dog_name', 'food', 'pounds',))
+    def test_empty_column_value_should_be_none(rows, data):
       for row, row_number, errors in rows:
-        collected_errors.append(errors)
+        if row['dog_name'] == 'emptyfood':
+          return row
 
-      self.assertIn('Expecting 3 columns in row 2, got 4', collected_errors[1])
-      self.assertIn('Expecting 3 columns in row 5, got 5', collected_errors[4])
-
-    test_yielded_errors(data=loads(dumps(o)))
+    result = loads(test_empty_column_value_should_be_none(data=loads(dumps(o))))
+    self.assertIsNotNone(result)
+    self.assertEqual('', result['food'])

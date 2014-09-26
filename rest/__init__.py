@@ -78,11 +78,13 @@ def view(func):
     return _serialize(func(*args, **kwargs))
   return wrapped
 
+
 def _check_csv_schema(schema, row, row_number):
   csv_row_schema = schema(row_number=row_number)
   if not csv_row_schema(row):
     raise CsvValidationError('CSV failed validation', csv_row_schema)
   return csv_row_schema
+
 
 def csv_upload(schema, fieldnames=None):
   """
@@ -98,7 +100,7 @@ def csv_upload(schema, fieldnames=None):
     @wraps(view)
     def view_wrapper(*args, **kwargs):
       body = request.files['file'].stream
-      rows = (_check_csv_schema(schema, row, i) \
+      rows = (_check_csv_schema(schema, row, i)
           for i, row in enumerate(csv.DictReader(body, fieldnames=fieldnames),
             start=1))
       try:
@@ -108,6 +110,7 @@ def csv_upload(schema, fieldnames=None):
 
     return view_wrapper
   return decorator
+
 
 def json_csv_upload(fieldnames):
   """
@@ -124,12 +127,6 @@ def json_csv_upload(fieldnames):
   def csv_row(row, row_number):
     errors          = []
     obj             = {}
-    expected_length = len(fieldnames)
-    actual_length   = len(row)
-
-    if expected_length != actual_length:
-      errors.append("Expecting %s columns in row %s, got %s" % (expected_length,
-        row_number, actual_length,))
 
     if not errors:
       for index, key in enumerate(fieldnames):
@@ -154,7 +151,7 @@ def json_csv_upload(fieldnames):
 
       csv_data = body.get('csv').encode('utf8')
 
-      kwargs['rows'] = ((row, line_num, errors) \
+      kwargs['rows'] = ((row, line_num, errors)
           for row, line_num, errors in csv_reader(csv_data))
 
       try:
@@ -164,6 +161,7 @@ def json_csv_upload(fieldnames):
 
     return view_wrapper
   return decorator
+
 
 def error(msg):
   codec = encoder(flask.request, 'errors')
@@ -175,13 +173,16 @@ def error(msg):
     response.data = codec.encode(msg._errors)
   return response
 
+
 def created(schema):
   response = Response(status=201)
   response.data = _serialize(schema)
   return response
 
+
 def deleted(schema=None):
   return Response(status=204)
+
 
 def _serialize(item, request=None):
   if request is None:
@@ -195,6 +196,7 @@ def _serialize(item, request=None):
     return codec.encode([_simplify(i) for i in item])
 
   return codec.encode(_simplify(item))
+
 
 def _simplify(item):
   if hasattr(item, '_get'):
